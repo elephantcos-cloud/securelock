@@ -8,7 +8,5 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 
-gradle.startParameter.excludedTaskNames.addAll(listOf(":buildSrc:testClasses"))
-
 rootProject.name = "SecureLock"
 include(":app")
