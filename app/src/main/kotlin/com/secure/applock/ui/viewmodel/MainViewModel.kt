@@ -23,38 +23,41 @@ data class InstalledAppInfo(
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val db    = (app as AppLockApplication).database
-    private val prefs = app.securePrefs
+    private val appInstance = app as AppLockApplication
+    private val db    = appInstance.database
+    private val prefs = appInstance.securePrefs
     private val dao   = db.lockedAppDao()
 
-    // ── Prefs flows ──────────────────────────────────────────────────────────
-    val isSetupDone  = prefs.isSetupDone.stateIn(viewModelScope, SharingStarted.Eagerly, false)
-    val theme        = prefs.theme.map { runCatching { AppTheme.valueOf(it) }.getOrDefault(AppTheme.DARK) }
+    val isSetupDone: StateFlow<Boolean> = prefs.isSetupDone
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    val theme: StateFlow<AppTheme> = prefs.theme
+        .map { s: String -> runCatching { AppTheme.valueOf(s) }.getOrDefault(AppTheme.DARK) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppTheme.DARK)
-    val lockEnabled  = prefs.lockEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, true)
-    val activeAlias  = prefs.activeAlias.stateIn(viewModelScope, SharingStarted.Eagerly, "ShieldAlias")
 
-    // ── Locked apps ──────────────────────────────────────────────────────────
-    val lockedApps = dao.getAllFlow().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val lockEnabled: StateFlow<Boolean> = prefs.lockEnabled
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
-    // ── Installed apps ───────────────────────────────────────────────────────
+    val activeAlias: StateFlow<String> = prefs.activeAlias
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "ShieldAlias")
+
+    val lockedApps: StateFlow<List<LockedApp>> = dao.getAllFlow()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     private val _installedApps = MutableStateFlow<List<InstalledAppInfo>>(emptyList())
     val installedApps: StateFlow<List<InstalledAppInfo>> = _installedApps
 
-    // ── Auth state ───────────────────────────────────────────────────────────
     private val _isAuthenticated = MutableStateFlow(false)
     val isAuthenticated: StateFlow<Boolean> = _isAuthenticated
 
     private val _wrongPassword = MutableStateFlow(false)
     val wrongPassword: StateFlow<Boolean> = _wrongPassword
 
-    // ─────────────────────────────────────────────────────────────────────────
-
     fun loadInstalledApps(context: Context) {
         viewModelScope.launch {
-            val pm      = context.packageManager
-            val locked  = dao.getAll().map { it.packageName }.toSet()
-            val apps    = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+            val pm     = context.packageManager
+            val locked = dao.getAll().map { it.packageName }.toSet()
+            val apps   = pm.getInstalledApplications(PackageManager.GET_META_DATA)
                 .filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 }
                 .filter { it.packageName != context.packageName }
                 .map { info ->
@@ -81,8 +84,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setupPassword(password: String) {
         viewModelScope.launch {
-            val hash = CryptoUtil.hashPassword(password)
-            prefs.setPasswordHash(hash)
+            prefs.setPasswordHash(CryptoUtil.hashPassword(password))
         }
     }
 
@@ -90,9 +92,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val stored = prefs.passwordHash.first()
             val ok     = stored != null && CryptoUtil.verifyPassword(oldPassword, stored)
-            if (ok) {
-                prefs.setPasswordHash(CryptoUtil.hashPassword(newPassword))
-            }
+            if (ok) prefs.setPasswordHash(CryptoUtil.hashPassword(newPassword))
             onResult(ok)
         }
     }
